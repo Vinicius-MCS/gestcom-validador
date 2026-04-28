@@ -49,7 +49,3 @@ validador/
 │── requirements.txt
 ```
 
-```text
-Camila P.
-Projeto interno para validação automatizada de arquivos CSV.
-```

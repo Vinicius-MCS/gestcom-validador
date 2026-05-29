@@ -198,6 +198,193 @@ def validar_arquivo(linhas, nome_schema):
     return erros, avisos
 
 
+def corrigir_e_validar_arquivo(linhas, nome_schema):
+    """
+    Higieniza e corrige automaticamente o conteúdo do arquivo com base nas regras do esquema,
+    registrando todas as correções efetuadas. Em seguida, roda as validações sobre o dado limpo.
+    
+    Retorna:
+        linhas_corrigidas (list[list[str]]): A matriz de dados higienizada.
+        erros (list[str]): Erros críticos que restaram após a correção.
+        avisos (list[str]): Avisos de formatação/duplicação.
+        correcoes (list[str]): Log descritivo de todas as auto-correções aplicadas.
+    """
+    if not linhas:
+        return [], ["Arquivo está vazio ou não pôde ser lido."], [], []
+
+    schema = SCHEMAS[nome_schema]
+    cabecalho_esperado = schema["cabecalho_esperado"]
+    quantidade_colunas = len(cabecalho_esperado)
+
+    correcoes = []
+    
+    cabecalho_original = linhas[0]
+    
+    # Tratamento de erro de formato inválido
+    if len(linhas) == 1 and cabecalho_original[0] == "ERRO_FORMATO_INVALIDO":
+        return [], ["Erro de Formato: Apenas arquivos no formato .csv são aceitos. Por favor, envie apenas arquivos no formato .csv."], [], []
+
+    # Tratamento de erro de delimitador incorreto
+    if len(cabecalho_original) == 1 and quantidade_colunas > 1:
+        primeira_celula = cabecalho_original[0]
+        if "," in primeira_celula or "\t" in primeira_celula or " " in primeira_celula:
+            provavel = "vírgula ','" if "," in primeira_celula else "tabulação (Tab)" if "\t" in primeira_celula else "espaço ' '"
+            return [], [
+                f"Erro de Delimitador: O arquivo parece estar separado por {provavel} em vez de ponto e vírgula ';'. Certifique-se de salvar o arquivo como CSV delimitado por ponto e vírgula."
+            ], [], []
+
+    # 1. Higienização estrutural preliminar: Truncar colunas excedentes e remover vazias
+    linhas_normalizadas = []
+    linhas_vazias_removidas = []
+    
+    # Verifica se o cabeçalho original possui colunas excedentes
+    if len(cabecalho_original) > quantidade_colunas:
+        excedente_count = len(cabecalho_original) - quantidade_colunas
+        correcoes.append(f"Foram removidas {excedente_count} coluna(s) excedente(s) vazias no final do arquivo.")
+
+    # Processamos o cabeçalho normalizado
+    cabecalho_recebido = [col.strip() for col in cabecalho_original[:quantidade_colunas]]
+    linhas_normalizadas.append(cabecalho_recebido)
+    
+    for numero_linha, linha in enumerate(linhas[1:], start=2):
+        # Trata as células limpando espaços
+        linha_limpa_campos = [campo.strip() for campo in linha]
+        
+        # Checamos se a linha está inteiramente vazia
+        if all(campo == "" for campo in linha_limpa_campos):
+            linhas_vazias_removidas.append(numero_linha)
+        else:
+            # Normaliza o tamanho da linha para corresponder exatamente ao esperado
+            linha_normalizada = list(linha_limpa_campos)
+            if len(linha_normalizada) > quantidade_colunas:
+                linha_normalizada = linha_normalizada[:quantidade_colunas]
+            else:
+                while len(linha_normalizada) < quantidade_colunas:
+                    linha_normalizada.append("")
+            linhas_normalizadas.append(linha_normalizada)
+            
+    if linhas_vazias_removidas:
+        if len(linhas_vazias_removidas) == 1:
+            correcoes.append(f"Foi removida 1 linha totalmente vazia (linha {linhas_vazias_removidas[0]}).")
+        else:
+            lista_str = ", ".join(map(str, sorted(linhas_vazias_removidas)))
+            correcoes.append(f"Foram removidas {len(linhas_vazias_removidas)} linhas totalmente vazias (linhas {lista_str}).")
+
+    # 2. Validações básicas de estrutura de cabeçalho sobre os dados normalizados
+    erros_estrutura = validar_estrutura_basica(linhas_normalizadas, quantidade_colunas, cabecalho_esperado)
+    if erros_estrutura:
+        # Se mesmo após a normalização dimensional houver erros (ex: nome de coluna incorreto),
+        # paramos aqui para evitar mapeamentos errôneos
+        return linhas, erros_estrutura, [], []
+
+    # Mapeamento dinâmico Nome da Coluna -> Índice
+    col_para_idx = {nome: cabecalho_recebido.index(nome) for nome in cabecalho_esperado if nome in cabecalho_recebido}
+
+    # 3. Correções de regras de negócio linha a linha
+    linhas_corrigidas = [cabecalho_recebido]
+    
+    for numero_linha, linha in enumerate(linhas_normalizadas[1:], start=2):
+        linha_limpa = list(linha) # as células já estão tratadas na etapa 1
+        
+        # Sanitização geral: quebras de linha (\n, \r, _x000D_, _x000A_) e conflitos de delimitador (';' -> ',')
+        for idx in range(len(linha_limpa)):
+            valor_original = linha_limpa[idx]
+            
+            valor_limpo = valor_original.replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ')
+            valor_limpo = valor_limpo.replace('_x000D_', ' ').replace('_x000A_', ' ')
+            
+            # Substitui ';' por ',' para evitar conflitos de quebra de delimitador no CSV final
+            valor_limpo = valor_limpo.replace(';', ',')
+            
+            valor_limpo = " ".join(valor_limpo.split())
+            
+            if valor_limpo != valor_original:
+                linha_limpa[idx] = valor_limpo
+                col_nome = cabecalho_recebido[idx] if idx < len(cabecalho_recebido) else f"coluna {idx+1}"
+                
+                # Constrói mensagem de log detalhada
+                mensagens_log = []
+                if '\r' in valor_original or '\n' in valor_original or '_x000' in valor_original:
+                    mensagens_log.append("removida quebra de linha")
+                if ';' in valor_original:
+                    mensagens_log.append("substituído ';' por ',' para evitar conflito de delimitador")
+                
+                msg_desc = " e ".join(mensagens_log) if mensagens_log else "caracteres especiais higienizados"
+                correcoes.append(f"Linha {numero_linha}: {msg_desc} no campo '{col_nome}'.")
+        
+        # A. Caso específico: CPF em Colaboradores
+        if nome_schema == "colaboradores":
+            cpf_idx = col_para_idx.get("cpf")
+            mat_idx = col_para_idx.get("matricula")
+            if cpf_idx is not None and mat_idx is not None:
+                cpf_val = linha_limpa[cpf_idx]
+                mat_val = linha_limpa[mat_idx]
+                if cpf_val in ["", "*"] and mat_val not in ["", "*"]:
+                    linha_limpa[cpf_idx] = mat_val
+                    correcoes.append(f"Linha {numero_linha}: CPF estava vazio/'*' e foi preenchido com a matrícula '{mat_val}' automaticamente.")
+
+        # B. Caso específico: Objetivos em Competências por Unidade
+        if nome_schema == "competencias_unidades":
+            obj_idx = col_para_idx.get("objetivos")
+            if obj_idx is not None:
+                obj_val = linha_limpa[obj_idx]
+                if obj_val not in ["", "*", "-"]:
+                    # Limpa todos os espaços
+                    obj_limpo = "".join(obj_val.split())
+                    # Converte float de ponto para vírgula
+                    if re.match(r'^\d+\.\d+$', obj_limpo):
+                        obj_limpo = obj_limpo.replace('.', ',')
+                    
+                    # Remove números duplicados mantendo a ordem de inserção original
+                    if any(sep in obj_limpo for sep in [',', '#']):
+                        sep = '#' if '#' in obj_limpo else ','
+                        partes = obj_limpo.split(sep)
+                        unicos = []
+                        for p in partes:
+                            if p and p not in unicos:
+                                unicos.append(p)
+                        obj_limpo = sep.join(unicos)
+                    
+                    if obj_limpo != obj_val:
+                        linha_limpa[obj_idx] = obj_limpo
+                        correcoes.append(f"Linha {numero_linha}: objetivos formatado de '{obj_val}' para '{obj_limpo}'.")
+
+        # C. Preenchimento de campos obrigatórios com '*' se vazios
+        for col_nome, idx in col_para_idx.items():
+            if col_nome in schema["obrigatorios"]:
+                valor_atual = linha_limpa[idx]
+                if valor_atual == "":
+                    linha_limpa[idx] = "*"
+                    correcoes.append(f"Linha {numero_linha}: campo obrigatório '{col_nome}' estava vazio e foi preenchido com '*' automaticamente.")
+
+        linhas_corrigidas.append(linha_limpa)
+
+    # 4. Remoção de duplicidades exatas
+    linhas_unicas = [linhas_corrigidas[0]]
+    vistas = set()
+    linhas_duplicadas_removidas = []
+    
+    for numero_linha, linha in enumerate(linhas_corrigidas[1:], start=2):
+        linha_tupla = tuple(linha)
+        if linha_tupla in vistas:
+            linhas_duplicadas_removidas.append(numero_linha)
+        else:
+            vistas.add(linha_tupla)
+            linhas_unicas.append(linha)
+            
+    if linhas_duplicadas_removidas:
+        if len(linhas_duplicadas_removidas) == 1:
+            correcoes.append(f"Foi removida 1 linha duplicada idêntica (linha {linhas_duplicadas_removidas[0]}).")
+        else:
+            lista_str = ", ".join(map(str, sorted(linhas_duplicadas_removidas)))
+            correcoes.append(f"Foram removidas {len(linhas_duplicadas_removidas)} linhas duplicadas idênticas (linhas {lista_str}).")
+
+    # 5. Executar validação sobre as linhas finais higienizadas
+    erros, avisos = validar_arquivo(linhas_unicas, nome_schema)
+
+    return list(linhas_unicas), erros, avisos, correcoes
+
+
 # ==========================================
 # EXTRAÇÃO DE IDENTIFICADORES (CHAVES PRIMÁRIAS)
 # ==========================================

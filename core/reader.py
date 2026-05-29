@@ -43,6 +43,7 @@ def processar_arquivo_para_linhas(arquivo):
     """
     Recebe um arquivo (pode ser o objeto UploadedFile do Streamlit ou um caminho de arquivo)
     e processa o seu conteúdo para retornar uma lista de listas.
+    Apenas arquivos .csv são suportados.
     """
     if arquivo is None:
         return None
@@ -57,17 +58,14 @@ def processar_arquivo_para_linhas(arquivo):
 
     extensao = os.path.splitext(nome_arquivo)[1].lower()
 
-    if extensao in [".xls", ".xlsx"]:
-        if is_caminho:
-            return converter_excel_para_linhas(arquivo)
-        else:
-            # Passa o buffer de bytes do Streamlit
-            return converter_excel_para_linhas(arquivo.getvalue())
+    if extensao != ".csv":
+        # Retorna uma linha especial indicando formato inválido para ser tratada pela engine de validação
+        return [["ERRO_FORMATO_INVALIDO"]]
+
+    if is_caminho:
+        with open(arquivo, 'rb') as f:
+            conteudo_bytes = f.read()
     else:
-        if is_caminho:
-            with open(arquivo, 'rb') as f:
-                conteudo_bytes = f.read()
-        else:
-            conteudo_bytes = arquivo.getvalue()
-        
-        return ler_linhas_csv(conteudo_bytes)
+        conteudo_bytes = arquivo.getvalue()
+    
+    return ler_linhas_csv(conteudo_bytes)

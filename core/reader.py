@@ -1,26 +1,6 @@
 import csv
 import io
 import os
-import pandas as pd
-
-def converter_excel_para_linhas(arquivo_input):
-    """
-    Lê um arquivo Excel (pode ser caminho físico ou bytes/objeto Streamlit)
-    e retorna uma lista de listas com os dados, tratando tudo como string.
-    """
-    try:
-        # Lê o Excel em um DataFrame
-        df = pd.read_excel(arquivo_input, dtype=str)
-        # Substitui valores nulos por strings vazias e garante que tudo é string
-        df = df.apply(lambda col: col.map(lambda x: str(x) if pd.notnull(x) else ""))
-        
-        # Converte para lista de listas, incluindo o cabeçalho
-        cabecalho = df.columns.astype(str).tolist()
-        linhas = [cabecalho] + df.values.tolist()
-        return linhas
-    except Exception as e:
-        print(f"Erro ao converter Excel: {e}")
-        return None
 
 def ler_linhas_csv(conteudo_bytes):
     """

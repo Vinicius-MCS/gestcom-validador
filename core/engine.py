@@ -197,6 +197,10 @@ def validar_arquivo(linhas, nome_schema):
 
     return erros, avisos
 
+def normalizar_separador_milhar(valor: str) -> str:
+    if re.match(r'^\d{1,3}(\.\d{3})+$', valor):
+        return valor.replace('.', '')
+    return valor
 
 def corrigir_e_validar_arquivo(linhas, nome_schema):
     """
@@ -311,6 +315,16 @@ def corrigir_e_validar_arquivo(linhas, nome_schema):
                 
                 msg_desc = " e ".join(mensagens_log) if mensagens_log else "caracteres especiais higienizados"
                 correcoes.append(f"Linha {numero_linha}: {msg_desc} no campo '{col_nome}'.")
+
+        for col_nome, idx in col_para_idx.items():
+            if col_nome.startswith("codigo_"):
+                valor_original_codigo = linha_limpa[idx]
+                valor_normalizado = normalizar_separador_milhar(valor_original_codigo)
+                if valor_normalizado != valor_original_codigo:
+                    linha_limpa[idx] = valor_normalizado
+                    correcoes.append(
+                        f"Linha {numero_linha}: {col_nome} '{valor_original_codigo}' teve o separador de milhar removido, sendo alterado para '{valor_normalizado}'"
+                    )
         
         # A. Caso específico: CPF em Colaboradores
         if nome_schema == "colaboradores":

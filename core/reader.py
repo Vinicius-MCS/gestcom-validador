@@ -1,23 +1,22 @@
 import csv
 import io
 import os
+from charset_normalizer import from_bytes 
 
 def ler_linhas_csv(conteudo_bytes):
     """
     Tenta decodificar o conteúdo em bytes com múltiplos encodings
     e lê as linhas usando o leitor de CSV.
     """
-    encodings = ['utf-8-sig', 'latin-1', 'cp1252']
-    for encoding in encodings:
-        try:
-            texto = conteudo_bytes.decode(encoding)
-            # Cria um StringIO para ler como se fosse um arquivo de texto
-            buffer = io.StringIO(texto)
-            leitor = csv.reader(buffer, delimiter=';')
-            return list(leitor)
-        except (UnicodeDecodeError, TypeError):
-            continue
-    raise Exception("Não foi possível ler o arquivo. Encoding inválido.")
+    resultado = from_bytes(conteudo_bytes).best()
+
+    if resultado is None:
+        raise Exception("Não foi possível ler o arquivo. Encoding inválido.")
+
+    texto = str(resultado)
+    buffer = io.StringIO(texto)
+    leitor = csv.reader(buffer, delimiter=';')
+    return list(leitor)
 
 def processar_arquivo_para_linhas(arquivo):
     """

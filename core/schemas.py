@@ -37,11 +37,11 @@ def validar_objetivos(valor, numero_linha):
     if re.match(r'^\d+\.\d+$', valor_tratado):
         valor_tratado = valor_tratado.replace('.', ',')
 
-    if not padrao.match(valor_tratado) and valor_tratado not in ["-"]:
+    if not padrao.match(valor_tratado) and valor_tratado not in ["-", "*"]:
         erros.append(f"Linha {numero_linha}: objetivos '{valor_tratado}' inválido. Use números separados por ',' ou '#' sem espaços.")
         return erros, avisos
 
-    if valor_tratado != "-":
+    if valor_tratado not in ["-", "*"]:
         numeros = re.split(r'[,#]', valor_tratado)
         if len(numeros) > 5:
             erros.append(f"Linha {numero_linha}: objetivos '{valor_tratado}' possui mais de 5 números.")

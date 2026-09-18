@@ -343,6 +343,10 @@ def corrigir_e_validar_arquivo(linhas, nome_schema):
             if obj_idx is not None:
                 obj_val = linha_limpa[obj_idx]
                 if obj_val not in ["", "*", "-"]:
+                    obj_val_corrigido = obj_val.replace('#-', '#')
+                    if(obj_val_corrigido != obj_val):
+                        correcoes.append(f"Linha {numero_linha}: objetivos '{obj_val}' teve '#-' indevido removido.")
+                        obj_val = obj_val_corrigido
                     # Limpa todos os espaços
                     obj_limpo = "".join(obj_val.split())
                     # Converte float de ponto para vírgula
